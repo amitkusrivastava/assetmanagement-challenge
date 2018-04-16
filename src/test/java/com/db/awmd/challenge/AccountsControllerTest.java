@@ -2,7 +2,6 @@ package com.db.awmd.challenge;
 
 import com.db.awmd.challenge.domain.Account;
 import com.db.awmd.challenge.service.AccountsService;
-import org.assertj.core.api.Assertions;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -17,8 +16,7 @@ import org.springframework.web.context.WebApplicationContext;
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
@@ -102,5 +100,77 @@ public class AccountsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(
                         content().string("{\"accountId\":\"" + uniqueAccountId + "\",\"balance\":123.45}"));
+    }
+
+    @Test
+    public void transferAmount_failsDueToEmptyFromAccount() throws Exception {
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"\", \"toAccountId\": \"Id-234\", \"amount\":1000}")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void transferAmount_failsDueToEmptyToAccount() throws Exception {
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-123\", \"toAccountId\": \"\", \"amount\":1000}")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void transferAmount_failsDueToNegativeAmount() throws Exception {
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-123\", \"toAccountId\": \"Id-234\", \"amount\":-1000}")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void transferAmount_failsDueToAbsentFromAccount() throws Exception {
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-123\", \"toAccountId\": \"Id-234\", \"amount\":1000}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string("Account with id Id-123 is not present."));
+    }
+
+    @Test
+    public void transferAmount_failsDueToAbsentToAccount() throws Exception {
+
+        accountsService.createAccount(new Account("Id-123", BigDecimal.valueOf(1000.00)));
+
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-123\", \"toAccountId\": \"Id-234\", \"amount\":1000}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string("Account with id Id-234 is not present."));
+    }
+
+    @Test
+    public void transferAmount_failsDueToNegativeBalanceAfterDebit() throws Exception {
+
+        accountsService.createAccount(new Account("Id-123", BigDecimal.valueOf(1000.00)));
+        accountsService.createAccount(new Account("Id-234", BigDecimal.valueOf(1000.00)));
+
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-123\", \"toAccountId\": \"Id-234\", \"amount\":2000}"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().string("After debit, account will have balance of -1000.0. Account cannot have negative balance"));
+
+        Account fromAccount = accountsService.getAccount("Id-123");
+        assertThat(fromAccount.getBalance()).isEqualByComparingTo("1000");
+
+        Account toAccount = accountsService.getAccount("Id-234");
+        assertThat(toAccount.getBalance()).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    public void transferAmount_success() throws Exception {
+
+        accountsService.createAccount(new Account("Id-456", BigDecimal.valueOf(1000.00)));
+        accountsService.createAccount(new Account("Id-678", BigDecimal.valueOf(1000.00)));
+
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-456\", \"toAccountId\": \"Id-678\", \"amount\":500}"))
+                .andExpect(status().isOk());
+
+        Account fromAccount = accountsService.getAccount("Id-456");
+        assertThat(fromAccount.getBalance()).isEqualByComparingTo("500");
+
+        Account toAccount = accountsService.getAccount("Id-678");
+        assertThat(toAccount.getBalance()).isEqualByComparingTo("1500");
     }
 }
