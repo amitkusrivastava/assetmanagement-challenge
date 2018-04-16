@@ -173,4 +173,45 @@ public class AccountsControllerTest {
         Account toAccount = accountsService.getAccount("Id-678");
         assertThat(toAccount.getBalance()).isEqualByComparingTo("1500");
     }
+
+    @Test
+    public void transferAmount_multipleTransferRequest_failsDueToNegativeBalance() throws Exception {
+
+        accountsService.createAccount(new Account("Id-456", BigDecimal.valueOf(1000.00)));
+        accountsService.createAccount(new Account("Id-678", BigDecimal.valueOf(1000.00)));
+
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-456\", \"toAccountId\": \"Id-678\", \"amount\":500}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-456\", \"toAccountId\": \"Id-678\", \"amount\":1500}"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().string("After debit, account will have balance of -1000.0. Account cannot have negative balance"));
+
+        Account fromAccount = accountsService.getAccount("Id-456");
+        assertThat(fromAccount.getBalance()).isEqualByComparingTo("500");
+
+        Account toAccount = accountsService.getAccount("Id-678");
+        assertThat(toAccount.getBalance()).isEqualByComparingTo("1500");
+    }
+
+    @Test
+    public void transferAmount_multipleTransferRequest_success() throws Exception {
+
+        accountsService.createAccount(new Account("Id-456", BigDecimal.valueOf(1000.00)));
+        accountsService.createAccount(new Account("Id-678", BigDecimal.valueOf(1000.00)));
+
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-456\", \"toAccountId\": \"Id-678\", \"amount\":500}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/v1/accounts/transfer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fromAccountId\":\"Id-456\", \"toAccountId\": \"Id-678\", \"amount\":100}"))
+                .andExpect(status().isOk());
+
+        Account fromAccount = accountsService.getAccount("Id-456");
+        assertThat(fromAccount.getBalance()).isEqualByComparingTo("400");
+
+        Account toAccount = accountsService.getAccount("Id-678");
+        assertThat(toAccount.getBalance()).isEqualByComparingTo("1600");
+    }
 }
